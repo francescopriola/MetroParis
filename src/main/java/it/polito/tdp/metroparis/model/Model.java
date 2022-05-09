@@ -1,5 +1,6 @@
 package it.polito.tdp.metroparis.model;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -7,7 +8,7 @@ import java.util.Map;
 import org.jgrapht.Graph;
 import org.jgrapht.Graphs;
 import org.jgrapht.graph.*;
-import org.jgrapht.traverse.BreadthFirstIterator;
+import org.jgrapht.traverse.*;
 import org.jgrapht.traverse.GraphIterator;
 
 import it.polito.tdp.metroparis.db.MetroDAO;
@@ -15,89 +16,75 @@ import it.polito.tdp.metroparis.db.MetroDAO;
 public class Model {
 	
 	private Graph<Fermata, DefaultEdge> grafo;
+	private List<Fermata> fermate;
+	private Map<Integer, Fermata> fermateIdMap;
+	MetroDAO dao = new MetroDAO();
+	
+	public List<Fermata> getFermate(){
+		if(this.fermate == null) {
+			this.fermate = dao.getAllFermate();
+			
+			fermateIdMap = new HashMap<Integer, Fermata>();
+			for(Fermata f : this.fermate) {
+				this.fermateIdMap.put(f.getIdFermata(), f);
+			}
+		}
+		return this.fermate;
+	}
+	
+	public List<Fermata> calcolaPercorso(Fermata partenza, Fermata arrivo){
+		this.creaGrafo();
+		Map<Fermata, Fermata> alberoInverso = visitaGrafo(partenza);
+		
+		Fermata corrente = arrivo;
+		List<Fermata> percorso = new ArrayList<>();
+		
+		while(corrente != null) {
+			percorso.add(0, corrente);
+			corrente = alberoInverso.get(corrente);
+		}
+		
+		return percorso;
+	}
+	
+	public Map<Fermata, Fermata> visitaGrafo(Fermata partenza) {
+		//GraphIterator<Fermata, DefaultEdge> visita = new BreadthFirstIterator<>(this.grafo, partenza);
+		GraphIterator<Fermata, DefaultEdge> visita = new BreadthFirstIterator<>(this.grafo, partenza);	//Ricerca in profondità
+		
+		Map<Fermata, Fermata> alberoInverso = new HashMap<>();
+		alberoInverso.put(partenza, null);
+		
+		visita.addTraversalListener(new RegistraAlberoDiVisita(alberoInverso, grafo));
+		
+		while(visita.hasNext()) {
+			Fermata f = visita.next();
+//			System.out.println(f);
+		}
+		
+		return alberoInverso;
+		//Ricostruiamo il percorso a partire dall'albero inverso (pseudo-code)
+//		List<Fermata> percorso = new ArrayList<>();
+//		fermata = arrivo;
+//		while(fermata != null) {
+//			fermata = alberoInverso.get(fermata);
+//			percorso.add(fermata);
+//		}
+	}
 	
 	public void creaGrafo() {
 		this.grafo = new SimpleDirectedGraph<Fermata, DefaultEdge>(DefaultEdge.class);
-		
-		MetroDAO dao = new MetroDAO();
-		List<Fermata> fermate = dao.getAllFermate();
-		Map<Integer, Fermata> fermateIdMap= new HashMap<Integer, Fermata>();
-		for(Fermata f : fermate) {
-			fermateIdMap.put(f.getIdFermata(), f);
-		}
-		
-		Graphs.addAllVertices(grafo, fermate);
-//		METODO 1: ITERO SU OGNI COPPIA DI VERTICI (NON E' SEMPRE Iò PIU' LENTO)
-		
-//		for(Fermata partenza : fermate) {
-//			for(Fermata arrivo : fermate) {
-//				if(dao.isFermateConnesse(partenza, arrivo)) {	//se esiste almeno una connessione tre partenza e arrivo
-//					this.grafo.addEdge(partenza, arrivo);
-//				}
-//			}
-//		}
-		
-//		METODO 2: DATO CIASCUN VERTICE, TROVA I VERTICI AD ESSO ADIACENTI
-//		Variante 2a: il DAO restituisce un elenco di ID numerici
 
-//		for(Fermata partenza : fermate) {
-//			List<Integer> idConnesse = dao.getIdFernateConnesse(partenza);
-//			for(Integer id : idConnesse) {
-//				//Fermata arrivo = ;//fermata che possiede questo id
-//				Fermata arrivo = null;
-//				for(Fermata f : fermate) {
-//					if(f.getIdFermata() == id) {
-//						arrivo = f;
-//						break;
-//					}
-//				}
-//				this.grafo.addEdge(partenza, arrivo);
-//			}
-//		}
-	
-//		METODO 2: DATO CIASCUN VERTICE, TROVA I VERTICI AD ESSO ADIACENTI
-//		Variante 2b: il DAO restituisce un elenco di oggetti Fermata
-		
-//		for(Fermata partenza : fermate) {
-//			List<Fermata> arrivi = dao.getFermateConnesse(partenza);
-//			for(Fermata arrivo : arrivi) {
-//				this.grafo.addEdge(partenza, arrivo);
-//			}
-//		}
-		
-//		METODO 2: DATO CIASCUN VERTICE, TROVA I VERTICI AD ESSO ADIACENTI
-//		Variante 2c: il DAO restituisce un elenco di ID numerici che converto in oggetti tramite una Map<Integer, Fermata< - "Identity Map"
-		
-//		for(Fermata partenza : fermate) {
-//			List<Integer> idConnesse = dao.getIdFernateConnesse(partenza);
-//			for(int id : idConnesse) {
-//				Fermata arrivo = fermateIdMap.get(id);
-//				this.grafo.addEdge(partenza, arrivo);
-//			}
-//		}
-		
-//		METODO 3: FACCIO UNA SOLA QUERY CHE MI RESTITUISCA LE COPPIE DI FERMATE DA COLLEGARE 
-//		Variante preferita 3c : usare Identity Map
+		Graphs.addAllVertices(this.grafo, this.getFermate());
+
 		List<CoppiaID> fermateDaCollegare = dao.getAllFermateConnesse();
 		for(CoppiaID coppia : fermateDaCollegare) {
 			this.grafo.addEdge(fermateIdMap.get(coppia.getIdPartenza()), fermateIdMap.get(coppia.getIdArrivo()));
 		}
 		
 		
-		System.out.println(this.grafo);
-		System.out.println("Vertici = " + this.grafo.vertexSet().size());
-		System.out.println("Archi = " + this.grafo.edgeSet().size());
-		
-		visitaGrafo(fermate.get(0));
-	}
-	
-	public void visitaGrafo(Fermata partenza) {
-		GraphIterator<Fermata, DefaultEdge> visita = new BreadthFirstIterator<>(this.grafo, partenza);
-		//GraphIterator<Fermata, DefaultEdge> visita = new DepthFirstIterator<>(this.grafo, partenza);	//Ricerca in profondità
-		while(visita.hasNext()) {
-			Fermata f = visita.next();
-			System.out.println(f);
-		}
+//		System.out.println(this.grafo);
+//		System.out.println("Vertici = " + this.grafo.vertexSet().size());
+//		System.out.println("Archi = " + this.grafo.edgeSet().size());
 	}
 
 }
